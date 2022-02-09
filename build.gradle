@@ -1,0 +1,29 @@
+plugins {
+    id 'com.github.johnrengelman.shadow' version '7.1.2'
+    id 'application'
+}
+
+dependencies {
+    implementation 'io.dropwizard:dropwizard-core:2.0.28'
+    implementation 'io.dropwizard:dropwizard-client:2.0.28'
+    // https://aws-otel.github.io/docs/getting-started/java-sdk/trace-auto-instr#using-manual-instrumentation
+    implementation 'io.opentelemetry:opentelemetry-api:1.10.1'
+
+}
+
+repositories {
+    mavenCentral()
+}
+
+application {
+    mainClass = 'com.example.dropwizard.DropWizardDriver'
+}
+
+shadowJar {
+    archiveBaseName.set('shadow')
+    archiveClassifier.set('')
+    archiveVersion.set('')
+    mergeServiceFiles()
+    exclude 'META-INF/*.DSA'
+    exclude 'META-INF/*.RSA'
+}

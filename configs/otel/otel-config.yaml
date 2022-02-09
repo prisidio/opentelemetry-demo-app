@@ -1,0 +1,67 @@
+extensions:
+  health_check:
+  pprof:
+    endpoint: :1777
+  # https://github.com/open-telemetry/opentelemetry-collector/tree/main/extension/zpagesextension
+  zpages:
+    endpoint: :55679
+
+receivers:
+  # Data sources: traces, metrics, logs. See: https://opentelemetry.io/docs/collector/configuration/
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4318
+  # Used by web-app-metrics-prometheus-metrics-exposed-by-java-agent-and-traces-jaeger
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: "otel-prometheus-receiver"
+          scrape_interval: 15s
+          static_configs:
+            - targets: [web-app-metrics-prometheus-metrics-exposed-by-java-agent-and-traces-jaeger:9464"]
+
+processors:
+  # https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/memorylimiterprocessor/README.md
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 50
+    spike_limit_percentage: 30
+  # https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/filterprocessor/README.md
+  filter/metrics:
+    metrics:
+      exclude:
+        match_type: strict
+        metric_names:
+          - http_client_duration
+  # https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor
+  batch/traces:
+    timeout: 30s
+    send_batch_size: 200
+  batch/metrics:
+    timeout: 30s
+    send_batch_size: 200
+
+exporters:
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    const_labels:
+      test: "local"
+  jaeger:
+    endpoint: "jaeger:14250"
+    tls:
+      insecure: true
+service:
+#  telemetry:
+#    logs:
+#      level: "debug"
+  extensions: [pprof, zpages, health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch/traces]
+      exporters: [jaeger]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch/metrics]
+      exporters: [prometheus]

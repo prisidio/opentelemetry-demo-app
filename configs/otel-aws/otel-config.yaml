@@ -1,0 +1,93 @@
+extensions:
+  health_check:
+  pprof:
+    endpoint: :1777
+  # https://github.com/open-telemetry/opentelemetry-collector/tree/main/extension/zpagesextension
+  zpages:
+    endpoint: :55679
+
+receivers:
+  # Data sources: traces, metrics, logs. See: https://opentelemetry.io/docs/collector/configuration/
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  # https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/memorylimiterprocessor/README.md
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 50
+    spike_limit_percentage: 30
+  # https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/filterprocessor/README.md
+  filter/metrics:
+    metrics:
+      exclude:
+        match_type: strict
+        metric_names:
+          - http_client_duration
+#      exclude:
+#        match_type: regexp
+#        metric_names:
+#          - api_.*
+#          - http_.*
+  # https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor
+  batch/traces:
+    timeout: 30s
+    send_batch_size: 200
+  batch/metrics:
+    timeout: 30s
+    send_batch_size: 200
+
+exporters:
+  awsxray:
+    region: "${AWS_REGION}"
+  #  # awsemf exporter routes metrics to Cloudwatch
+  #  awsemf:
+  #    region: "${AWS_REGION}"
+  awsprometheusremotewrite:
+    endpoint: "${PROMETHEUS_WRITE_ENDPOINT}"
+    aws_auth:
+      service: "aps"
+      region: "${AWS_REGION}"
+  #    # Appends this value in front of metric name. e.g. x_api_latency_bucket will be reported.
+  #    namespace: "x"
+  #    # Add additional metric tags.
+  #    # During conflicts, app's metric tags will be retained instead of using below tags.
+    external_labels:
+      test_label: "aws"
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+#    # Add additional metric tags.
+#    # When they conflict with app's metric tag, metric is not sent.
+#    # We write this tag in instrumentation app as we may not use this config for worker svc.
+#    const_labels:
+#      svc: "${COPILOT_SERVICE_NAME}"
+#      env: "${COPILOT_ENVIRONMENT_NAME}"
+service:
+#  # Enable below to print debug logs of collector
+#  telemetry:
+#    logs:
+#      level: "debug"
+  extensions: [pprof, zpages, health_check]
+  pipelines:
+    # Pipeline to send traces to x-ray
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch/traces]
+      exporters: [awsxray]
+    # Pipeline to send metrics to AMP workspace
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/metrics, batch/metrics]
+      exporters: [awsprometheusremotewrite]
+    # Pipeline to send metrics to local prometheus workspace
+    metrics/2:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/metrics, batch/metrics]
+      exporters: [prometheus]
+#    # Pipeline to send metrics to Cloudwatch
+#    metrics/3:
+#      receivers: [ otlp ]
+#      processors: [ batch ]
+#      exporters: [ awsemf ]

@@ -11,6 +11,7 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,27 +62,28 @@ public class HelloWorldResource {
     @Timed
     public Saying sayHello(@QueryParam("name") Optional<String> name) {
         log.info("Serving request for [{}]", name.orElse(defaultName));
-        SpanBuilder span = tracer.spanBuilder("random-sleep");
-        long startTime = System.currentTimeMillis();
-        try {
+        Span span = tracer.spanBuilder("random-sleep").startSpan();
+        try (Scope scope = span.makeCurrent()) {
+            // ... application logic
+            long startTime = System.currentTimeMillis();
             final String value = String.format(template, name.orElse(defaultName));
 
-            Span s = span.startSpan();
             sleepToGenerateRandomSpanLengths();
             //Generate error to see exception information in tracing system
             if (name.isPresent() && "error".equals(name.get())) {
-                generateError(s);
+                generateError(span);
             }
-            s.end();
 
             callAnotherApiToGenerateHttpClientMetrics(name);
 
+            apiInvocationCounter.add(1, Attributes.of(AttributeKey.stringKey("api-param"), name.orElse(defaultName)));
+            apiLatencyRecorder.record(System.currentTimeMillis() - startTime,
+                    Attributes.of(AttributeKey.stringKey("api-param"), name.orElse(defaultName)));
+
+            // ...
             return new Saying(counter.incrementAndGet(), value);
         } finally {
-            apiInvocationCounter.add(1, Attributes.of(AttributeKey.stringKey("api-param"), name.orElse(defaultName)), Context.root());
-            apiLatencyRecorder.record(System.currentTimeMillis() - startTime,
-                    Attributes.of(AttributeKey.stringKey("api-param"), name.orElse(defaultName)),
-                    Context.root());
+            span.end();
         }
     }
 
